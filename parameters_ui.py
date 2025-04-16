@@ -1,46 +1,63 @@
-import sys
+"""
+Module for defining the specific functionality for the radio buttons.
+Builds off the base logic defined in parameters_logic.py.
+"""
 from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QPushButton, QVBoxLayout, QHBoxLayout, QWidget,
-    QFrame, QSizePolicy, QToolButton, QLabel, QSlider, QSpinBox, QComboBox, QSpacerItem
+    QVBoxLayout, QHBoxLayout, QWidget,
+    QFrame, QSizePolicy, QToolButton, QLabel, QSpinBox, QComboBox, QSpacerItem
 )
 from PySide6.QtCore import Qt
-from parameters_logic import DisplayResults, CreateLayout, MapDataCategories
-from shared_functions import InterpolateColour, CreateResultButtonWidget
+from parameters_logic import display_results, create_layout
+from shared_functions import interpolate_colour, create_result_button
 
+# === Colour Definitions ===
 low = "#90EE90"  # Low
 medium = "#ffd68b"  # Medium
 high = "#f09d9d"  # High
 critical = "#e47676"  # High
 
-#defaultPolicyRating = 0 # change this for default policy rating, NOTE the lower the number the "weaker" the policy strength, PVE-proc is 1 - policyRating
 
 class Values:
+    """
+    Class containing functional importance (impact), information rate (information) and policy strength (policy) values.
+    Used in main.py to calcuate the final cryptoperiod along with get_import_values() from import_devices_ui.py.
+    """
     impact = 0
-    data = 0.1
-    policy = 1 #do the inverse of the policy rating for initial value
+    information = 0.1
+    policy = 1 # do the inverse of the policy rating for initial value, IE policy strength of 0 means policy = 1
 
 values = Values()
 
-def SetTooltips(widget, tooltips):
-    for child in widget.findChildren(QWidget):
-        if isinstance(child, QLabel):
-            labelText = child.text().strip()
-            if labelText in tooltips:
-                child.setToolTip(tooltips[labelText])
-        SetTooltips(child, tooltips)
+def create_generic_layout(severityList, categoryList, numButtonGroups, updateFunc, defaultColor, tooltips, createResultButton):
+    """
+    Generates a reusable vertical layout that includes grouped toggle buttons (severity selectors) for different categories. 
+    Each group represents a set of mutually exclusive toggle buttons indicating levels of severity (e.g., None, Low, Medium, High).
 
-def CreateGenericLayout(severityList, categoryList, numButtonGroups, updateFunc, defaultColor, tooltips, createResultButton):
+    The layout dynamically updates a result display (if enabled) based on the user's selections.
+    - severityList: List of tuples specifying (label, score, color) for each 
+      severity level.
+    - categoryList: List of category names or (name, subcategories) tuples 
+      specifying the layout structure.
+    - numButtonGroups: Number of grouped buttons per category.
+    - updateFunc: Function to handle logic for computing and updating the result.
+    - defaultColor: Default background color for the result display.
+    - tooltips: Dictionary mapping label names to tooltip text.
+    - createResultButton: Boolean flag to indicate whether to add a result 
+      display button to the layout.
+
+    See the "Initalize category varaibles" section in this file for examples on how to implement a layout.
+    """
     
-    def UpdateButton(buttonGroups, activeItems, resultButton=None):
-        returnValue = DisplayResults(buttonGroups, activeItems)
+    def update_button(buttonGroups, activeItems, resultButton=None):
+        returnValue = display_results(buttonGroups, activeItems)
         updateFunc(returnValue, resultButton)
 
-    def ConnectButtons(buttonGroups, activeItems, resultButton, uiFrame):
+    def connect_button(buttonGroups, activeItems, resultButton, uiFrame):
         for buttonGroupDict in buttonGroups:
             for buttonGroup in buttonGroupDict.values():
-                buttonGroup.buttonToggled.connect(lambda: UpdateButton(buttonGroups, activeItems, resultButton))
+                buttonGroup.buttonToggled.connect(lambda: update_button(buttonGroups, activeItems, resultButton))
         for btn in uiFrame.findChildren(QToolButton):
-            btn.toggled.connect(lambda: UpdateButton(buttonGroups, activeItems, resultButton))
+            btn.toggled.connect(lambda: update_button(buttonGroups, activeItems, resultButton))
 
     mainLayout = QVBoxLayout()
     mainLayout.setSpacing(10)
@@ -53,20 +70,79 @@ def CreateGenericLayout(severityList, categoryList, numButtonGroups, updateFunc,
     uiLayout.setContentsMargins(0, 0, 0, 0)
     uiFrame.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-    buttonGroups, activeItems = CreateLayout(uiLayout, severityList, categoryList, numButtonGroups)
-    SetTooltips(uiFrame, tooltips)
+    buttonGroups, activeItems = create_layout(uiLayout, severityList, categoryList, numButtonGroups)
+
+    def set_tooltips(widget, tooltips):
+      """
+      Logic to define tooltips for each label.
+      """
+      for child in widget.findChildren(QWidget):
+          if isinstance(child, QLabel):
+              labelText = child.text().strip()
+              if labelText in tooltips:
+                  child.setToolTip(tooltips[labelText])
+          set_tooltips(child, tooltips)
+
+    set_tooltips(uiFrame, tooltips)
 
     if createResultButton:
-        resultButton = CreateResultButtonWidget(defaultColor)
-        UpdateButton(buttonGroups, activeItems, resultButton)
-        ConnectButtons(buttonGroups, activeItems, resultButton, uiFrame)
+        resultButton = create_result_button(defaultColor)
+        update_button(buttonGroups, activeItems, resultButton)
+        connect_button(buttonGroups, activeItems, resultButton, uiFrame)
         uiLayout.addWidget(resultButton, alignment=Qt.AlignTop | Qt.AlignHCenter)
     else:
-        ConnectButtons(buttonGroups, activeItems, None, uiFrame)
+        connect_button(buttonGroups, activeItems, None, uiFrame)
 
     return uiFrame
 
-def UpdateImpactLayout(returnValue, resultButton):
+# === Initalize category varaibles ===
+def impact_categories():
+    """
+    Initializes the functional importance variables to use for create_generic_layout
+    """
+    severityList = [("None", 0, "#bababa"), ("Low", 0.3, low), ("Medium", 0.6, medium), ("High", 1, high), ("Critical", 2, critical)]
+    categoryList = [
+        ("Operational", []), ("Safety", []), ("Financial", []),
+        ("Privacy and Legislative", [])
+    ]
+    tooltips = {
+        "Operational": "Disruptions caused by adversaries accessing sensitive data within the ICS environment ", 
+
+        "Safety": "Information about safety protocols, emergency response plans, or control settings of safety-critical systems",
+
+        "Financial": "Economic repercussions that result from the compromise of data within an organization",
+
+        "Privacy and Legislative": "Consequences of adversaries gaining access to sensitive personal information and compliance-related data",
+
+    }
+
+    return create_generic_layout(severityList, categoryList, 2, update_impact_layout, "#bababa", tooltips, True)
+
+def information_rate_categories():
+    """
+    Initializes the information rate variables to use for create_generic_layout
+    """
+    severityList = [("Low", 1, low), ("Medium", 2, medium), ("High", 3, high)]
+    categoryList = ['Data Rate', 'Publishers']
+    tooltips = {"Data Rate": "Average amount of data sent per publisher", "Publishers": "Number of publishers in the environment"}
+
+    return create_generic_layout(severityList, categoryList, 1, update_information_rate_layout, "#90EE90", tooltips, True)
+
+def policy_categories():
+    """
+    Initializes the policy strength variables to use for create_generic_layout
+    """
+    severityList = [("None", 1, "#bababa"), ("Low", 0.75, low), ("Medium", 0.45, medium), ("High", 0.1, high)] # CHANGED None and High
+    tooltips = {"Policy Strength": "How strong are security-related procedural policies and guidelines"}
+
+    return create_generic_layout(severityList, ['Policy Strength'], 1, update_policy_layout, "#bababa", tooltips, False)
+# ====================================
+
+# === Apply Unique Characteristics to category variables ===
+def update_impact_layout(returnValue, resultButton):
+    """
+    Extra impelementation for functional importance.
+    """
     from collections import defaultdict
     
     # Group scores by category
@@ -90,7 +166,7 @@ def UpdateImpactLayout(returnValue, resultButton):
     for i in range(len(colors) - 1):
         if colors[i][0] <= impactExtent <= colors[i + 1][0]:
             factor = (impactExtent - colors[i][0]) / (colors[i + 1][0] - colors[i][0])
-            color = InterpolateColour(colors[i][1], colors[i + 1][1], factor)
+            color = interpolate_colour(colors[i][1], colors[i + 1][1], factor)
             break
     else:
         color = colors[-1][1]
@@ -103,131 +179,63 @@ def UpdateImpactLayout(returnValue, resultButton):
         impactExtent = 1
     values.impact = round(impactExtent, 2)
 
-def UpdateDataLayout(returnValue, resultButton):
-    severityLabel, severityValue = MapDataCategories(returnValue)
+def update_information_rate_layout(returnValue, resultButton):
+    """
+    Extra impelementation for information rate.
+    """
+    severityLabel, severityValue = map_information_rate_categories(returnValue)
     colorMap = {"Very Low": "#d4f1d4", "Low": low, "Moderate": medium, "High": high, "Very High": "#f28888"}
     color = colorMap.get(severityLabel, "#FFFFFF")
     resultButton.setText(f"{severityLabel} ({severityValue})")
     resultButton.setStyleSheet(f"background-color: {color}; border-radius: 3px; color: black;")
-    values.data = severityValue
-    
-def UpdatePolicyLayout(returnValue, resultButton):
-    values.policy = returnValue[0][3] # inverse as smaller number = less risk
+    values.information = severityValue
 
-def ImpactCategories():
-    severityList = [("None", 0, "#bababa"), ("Low", 0.3, low), ("Medium", 0.6, medium), ("High", 1, high), ("Critical", 2, critical)]
-    categoryList = [
-        ("Operational", []), ("Safety", []), ("Financial", []),
-        ("Privacy and Legislative", [])
+
+def map_information_rate_categories(returnValue):
+    """
+    Defined implementation for the information rate mapping.
+    Used in the update_information_rate_layout() of parameters_ui.py.
+    """
+    severityMap = {"Low": 0, "Medium": 1, "High": 2}
+
+    if len(returnValue) < 2:
+        return "Incomplete data"
+
+    # Automatically assign the first and second categories
+    informationRateLevel = returnValue[0][2]
+    publishersLevel = returnValue[1][2]
+
+    informationRateIndex = severityMap.get(informationRateLevel)
+    publishersIndex = severityMap.get(publishersLevel)
+
+    if informationRateIndex is None or publishersIndex is None:
+        return "Invalid severity level"
+
+    chart = [
+        [["Very Low", 0.1], ["Low", 0.3], ["Moderate", 0.75]],
+        [["Low", 0.3], ["Moderate", 0.75], ["High", 0.9]],
+        [["Moderate", 0.75], ["High", 0.9], ["Very High", 1.0]]
     ]
-    tooltips = {
-        "Operational": "Disruptions caused by adversaries accessing sensitive data within the ICS environment ", 
 
-        "Safety": "Information about safety protocols, emergency response plans, or control settings of safety-critical systems",
+    result = chart[publishersIndex][informationRateIndex]
 
-        "Financial": "Economic repercussions that result from the compromise of data within an organization",
-
-        "Privacy and Legislative": "Consequences of adversaries gaining access to sensitive personal information and compliance-related data",
-
-    }
-
-    return CreateGenericLayout(severityList, categoryList, 2, UpdateImpactLayout, "#bababa", tooltips, True)
-# def ImpactCategories():
-#     severityList = [("None", 0, "#bababa"), ("Low", 0.3, low), ("Medium", 0.6, medium), ("High", 1, high), ("Critical", 2, critical)]
-#     categoryList = [
-#         ("Operational", []), ("Safety", []), ("Financial", ["Loss of Revenue", "Proprietary Information", "Legal Fees"]),
-#         ("Privacy and Legislative", ["Societal Loss", "Regulatory Loss", "Environmental Loss"])
-#     ]
-#     tooltips = {
-#         "Operational": "Disruptions caused by adversaries accessing sensitive data within the ICS environment ", 
-
-#         "Safety": "Information about safety protocols, emergency response plans, or control settings of safety-critical systems",
-
-#         "Financial": "Economic repercussions that result from the compromise of data within an organization",
-#         "Loss of Revenue": "Financial setbacks resulting from disruptions to control system operations, devices, and processes",
-#         "Proprietary Information": "Financial loss from the compromises of both intellectual property and trade secrets",
-#         "Legal Fees": "Cost associated with defending against lawsuits",
-
-#         "Privacy and Legislative": "Consequences of adversaries gaining access to sensitive personal information and compliance-related data",
-#         "Societal Loss": "Repercussions on communities and public trust, encompassing factors related to public perception",
-#         "Regulatory Loss": "Affect an attack can have on the environment",
-#         "Environmental Loss": "Losses due to legal and regulatory aspects, including legal penalties and fines"
-#     }
-
-#     return CreateGenericLayout(severityList, categoryList, 2, UpdateImpactLayout, "#bababa", tooltips, True)
-
-def DataCategories():
-    severityList = [("Low", 1, low), ("Medium", 2, medium), ("High", 3, high)]
-    categoryList = ['Data Rate', 'Publishers']
-    tooltips = {"Data Rate": "Average amount of data sent per publisher", "Publishers": "Number of publishers in the environment"}
-
-    return CreateGenericLayout(severityList, categoryList, 1, UpdateDataLayout, "#90EE90", tooltips, True)
-
-def PolicyCategories():
-    severityList = [("None", 1, "#bababa"), ("Low", 0.75, low), ("Medium", 0.45, medium), ("High", 0.1, high)] # CHANGED None and High
-    tooltips = {"Policy Strength": "How strong are security-related procedural policies and guidelines"}
-
-    return CreateGenericLayout(severityList, ['Policy Strength'], 1, UpdatePolicyLayout, "#bababa", tooltips, False)
-
-def main():
-    app = QApplication(sys.argv)
-    window = QMainWindow()
-    window.setWindowTitle("Main UI")
-
-    impactFrame = ImpactCategories()
-    dataFrame = DataCategories()
-    policyFrame = PolicyCategories()
+    return result
     
-    mainLayout = QHBoxLayout()
-    mainLayout.setSpacing(10)
-    mainLayout.setContentsMargins(0, 0, 0, 0)
-    mainLayout.setAlignment(Qt.AlignTop)
-
-    leftLayout = QVBoxLayout()
-    leftLayout.setSpacing(10)
-    leftLayout.setAlignment(Qt.AlignTop)
-    
-    leftLayout.addWidget(policyFrame)
-    
-    dataContainer = QFrame()
-    dataContainerLayout = QVBoxLayout(dataContainer)
-    dataContainerLayout.setAlignment(Qt.AlignLeft)
-    dataContainerLayout.addWidget(dataFrame)
-    leftLayout.addWidget(dataContainer)
-
-    rightLayout = QVBoxLayout()
-    rightLayout.setSpacing(10)
-    rightLayout.setAlignment(Qt.AlignTop)
-    
-    rightContainer = QFrame()
-    rightContainerLayout = QVBoxLayout(rightContainer)
-    rightContainerLayout.setAlignment(Qt.AlignLeft)
-    rightContainerLayout.addWidget(impactFrame)
-    rightLayout.addWidget(rightContainer)
-
-    mainLayout.addLayout(leftLayout)
-    mainLayout.addLayout(rightLayout)
-    
-    container = QWidget()
-    container.setLayout(mainLayout)
-    window.setCentralWidget(container)
-
-    printButton = QPushButton("Print Values")
-    printButton.setFixedHeight(30)
-    printButton.setFixedWidth(100)
-    printButton.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-    printButton.setToolTip("This button prints the values list.")
-    printButton.clicked.connect(lambda: print(values))
-    
-    mainLayout.addWidget(printButton, alignment=Qt.AlignBottom | Qt.AlignRight)
-
-    window.show()
-    sys.exit(app.exec())
+def update_policy_layout(returnValue, resultButton):
+    """
+    Defined implementation for the policy mapping.
+    Used in the update_policy_layout() of parameters_ui.py.
+    """
+    values.policy = returnValue[0][3] # inverse as smaller number = less risk
+# ==========================================================
 
 def setup_ui(container):
-    impactFrame = ImpactCategories()
-    dataFrame = DataCategories()
-    policyFrame = PolicyCategories()
+    """ 
+    Configures the overall panel design and layout.
+    """
+    impactFrame = impact_categories()
+    dataFrame = information_rate_categories()
+    policyFrame = policy_categories()
     
     mainLayout = QHBoxLayout()
     mainLayout.setSpacing(10)
@@ -263,7 +271,7 @@ def setup_ui(container):
 
 #### I added the slider logic here cause it was easier
 
-def createTimeRangeInput(label_text, update_function, default_value=1, default_unit="hours"):
+def create_time_range_input(label_text, update_function, default_value=1, default_unit="hours"):
     timeRangeLayout = QVBoxLayout()
     timeRangeLabel = QLabel(label_text)
     timeRangeLabel.setAlignment(Qt.AlignLeft)
@@ -287,9 +295,9 @@ def createTimeRangeInput(label_text, update_function, default_value=1, default_u
     
     return timeRangeLayout
 
-def setupTopRight(container):
-    policyFrame = PolicyCategories()
-    dataFrame = DataCategories()
+def setup_top_right(container):
+    policyFrame = policy_categories()
+    dataFrame = information_rate_categories()
 
     leftLayout = QVBoxLayout()
     leftLayout.setSpacing(10)
@@ -300,8 +308,8 @@ def setupTopRight(container):
     timeLabel.setAlignment(Qt.AlignLeft)
     leftLayout.addWidget(timeLabel)
 
-    timeRange1Layout = createTimeRangeInput("Minimum:", updateTimeRange1, default_value=1, default_unit="days")  # Set default to 1 day
-    timeRange2Layout = createTimeRangeInput("Maximum:", updateTimeRange2, default_value=12, default_unit="months")  # Set default to 12 months
+    timeRange1Layout = create_time_range_input("Minimum:", update_time_range_1, default_value=1, default_unit="days")  # Set default to 1 day
+    timeRange2Layout = create_time_range_input("Maximum:", update_time_range_2, default_value=12, default_unit="months")  # Set default to 12 months
     timeRangesLayout = QHBoxLayout()
     timeRangesLayout.addLayout(timeRange1Layout)
     timeRangesLayout.addLayout(timeRange2Layout)
@@ -327,43 +335,8 @@ def setupTopRight(container):
 
     container.setLayout(leftLayout)
 
-# Define global variable
-global timeDifference
-timeDifference = 0
-
-# Define non-global variables to keep track of time ranges
-timeRange1 = 1
-timeRange2 = 1
-
-def updateTimeRange1(value, unit):
-    global timeRange1
-    timeRange1 = convertToHours(value, unit)
-    updateTimeDifference()
-    #print(f"Time Range 1: {time_range1_hours} hours")
-
-def updateTimeRange2(value, unit):
-    global timeRange2
-    timeRange2 = convertToHours(value, unit)
-    updateTimeDifference()
-    #print(f"Time Range 2: {time_range2_hours} hours")
-
-def updateTimeDifference():
-    global timeDifference
-    timeDifference = abs(timeRange2 - timeRange1)
-    #print(f"Time Difference: {timeDifference} hours")
-    return timeRange1, timeRange2
-
-def convertToHours(value, unit):
-    if unit == "hours":
-        return value
-    elif unit == "days":
-        return value * 24
-    elif unit == "months":
-        return value * 30 * 24  # Approximate month as 30 days
-    
-
-def setupImpact(container):
-    impactFrame = ImpactCategories()
+def setup_impact(container):
+    impactFrame = impact_categories()
     
     rightLayout = QVBoxLayout()
     rightLayout.setSpacing(10)
@@ -406,16 +379,36 @@ def setupImpact(container):
 
     container.setLayout(rightLayout)
 
-    # # Reintroduced commented-out code
-    # printButton = QPushButton("Print Values")
-    # printButton.setFixedHeight(30)
-    # printButton.setFixedWidth(100)
-    # printButton.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-    # printButton.setToolTip("This button prints the values list.")
-    # printButton.clicked.connect(lambda: print(values))
+# Define global variable
+global timeDifference
+timeDifference = 0
 
-    # mainLayout.addWidget(printButton, alignment=Qt.AlignBottom | Qt.AlignRight)
+# Define non-global variables to keep track of time ranges
+timeRange1 = 1
+timeRange2 = 1
 
+def update_time_range_1(value, unit):
+    global timeRange1
+    timeRange1 = convert_to_hours(value, unit)
+    update_time_difference()
+    #print(f"Time Range 1: {time_range1_hours} hours")
 
-if __name__ == "__main__":
-    main()
+def update_time_range_2(value, unit):
+    global timeRange2
+    timeRange2 = convert_to_hours(value, unit)
+    update_time_difference()
+    #print(f"Time Range 2: {time_range2_hours} hours")
+
+def update_time_difference():
+    global timeDifference
+    timeDifference = abs(timeRange2 - timeRange1)
+    #print(f"Time Difference: {timeDifference} hours")
+    return timeRange1, timeRange2
+
+def convert_to_hours(value, unit):
+    if unit == "hours":
+        return value
+    elif unit == "days":
+        return value * 24
+    elif unit == "months":
+        return value * 30 * 24  # Approximate month as 30 days

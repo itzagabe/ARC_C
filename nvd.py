@@ -1,21 +1,43 @@
+"""
+Module for querying and processing vulnerability data from the NVD (National Vulnerability Database).
+Includes functionality to search for CPEs, fetch related CVEs, and extract key metrics.
+"""
 import nvdlib
-import re
-from datetime import datetime, timedelta, date
-from private_key import key
-
 import threading
-from PySide6.QtWidgets import QApplication, QDialog, QVBoxLayout, QListWidget, QPushButton, QLabel
-from PySide6.QtCore import Qt
+import os
+from dotenv import load_dotenv
+from datetime import datetime, timedelta
+from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QPushButton, QLabel
 
+# === Environment Setup ===
+"""
+Load the private key. You can request an NVD API key by visiting the official NIST website: https://nvd.nist.gov/developers/request-an-api-key
+"""
+load_dotenv()
+
+private_key = os.getenv("PRIVATE_KEY")
+
+if not private_key:
+    print("PRIVATE_KEY not configured. For a more efficient query, please set it in the environment or a .env file.")
+
+# === Global Config / State ===
 officialCPE = []
 notFoundDevices = []
 refineSearchDevices = []
 timeoutTimer = 5
-delay = 3 #DELAY TIMER, 2 = lowest, may end up getting blocked from NVD if too many calls
+delay = 3 # DELAY TIMER, 2 = lowest, may end up getting blocked from NVD if too many calls
 
-def searchPLCInfoNVD(searchTermList, refinedSearch = True):
+def search_plc_info_nvd(searchTermList, refinedSearch = True):
+    """
+    Searches NVD for vulnerabilities related to a list of devices.
+    - Inputs: 
+     - searchTermList: A list of tuples where each tuple contains a CPE term and count.
+     - refinedSearch: A boolean indicating whether the search should include refinement of the search terms (default is True).
+    - Outputs:
+     - A list of tuples containing the CPE name and its associated CVE information.
+    Used by import_devices_ui.
+    """
     global officialCPE, notFoundDevices, refineSearchDevices, timeoutTimer
-    # Clear global lists
     officialCPE = []
     notFoundDevices = []
     refineSearchDevices = []
@@ -27,7 +49,7 @@ def searchPLCInfoNVD(searchTermList, refinedSearch = True):
             continue
         cpeList = []
         event = threading.Event()
-        threading.Thread(target=call_searchNVDCPE, args=(cpeTerm, cpeList, event)).start()
+        threading.Thread(target=call_search_nvd_cpe, args=(cpeTerm, cpeList, event)).start()
 
         if not event.wait(timeoutTimer):  #timeout
             refineSearchDevices.append(cpeTerm)
@@ -41,7 +63,7 @@ def searchPLCInfoNVD(searchTermList, refinedSearch = True):
         elif len(cpeList) == 1 or not refinedSearch:
             officialCPE.append((cpeList[0].cpeName, count))
         else:
-            selected_cpe = chooseWhichCPE(cpeList, cpeTerm, idx, listLength, count)
+            selected_cpe = choose_which_cpe(cpeList, cpeTerm, idx, listLength, count)
             if selected_cpe:
                 officialCPE.append((selected_cpe, count))
             else:
@@ -53,15 +75,19 @@ def searchPLCInfoNVD(searchTermList, refinedSearch = True):
     # Create the final list with CPEs and their corresponding CVEs
     cpe_cve_list = []
     for cpe, count in officialCPE:
-        cve_list = searchNVD(cpe)
-        refinedCVEList = getLatestCVEList(cve_list) # get refined CVE list
+        cve_list = search_nvd(cpe)
+        refinedCVEList = get_latest_cve_list(cve_list) # get refined CVE list
         cpe_cve_list.extend([(cpe, [(cve, True) for cve in refinedCVEList])] * count)
 
     return cpe_cve_list
 
-def call_searchNVDCPE(cpeTerm, cpeList, event):
+def call_search_nvd_cpe(cpeTerm, cpeList, event):
+    """
+    Responsible for querying NVD for CPE-related information asynchronously.
+    Used by search_plc_info_nvd method.
+    """
     try:
-        result = searchNVDCPE(cpeTerm)
+        result = search_nvd_cpe(cpeTerm)
         if result:
             cpeList.extend(result)
     except Exception as e:
@@ -69,8 +95,16 @@ def call_searchNVDCPE(cpeTerm, cpeList, event):
     finally:
         event.set()
 
-def chooseWhichCPE(cpeList, cpeTerm, idx, listLength, count):
-    app = QApplication.instance() or QApplication([])
+def choose_which_cpe(cpeList, cpeTerm, idx, listLength, count):
+    """
+    Prompts the operator to choose a CPE from a list of options using a GUI dialog.
+    - Inputs:
+      - cpeList: A list of CPE objects, each containing a cpeName to be presented to the user.
+      - cpeTerm: The original CPE term used for the search.
+    - Outputs:
+      - A string representing the selected CPE name, or None if the user doesn't select any CPE.
+    Used by search_plc_info_nvd method.
+     """
 
     dialog = QDialog()
     dialog.setWindowTitle(f"Choose CPE for \"{cpeTerm}\" ({idx + 1} / {listLength}) - {count} devices")
@@ -85,7 +119,6 @@ def chooseWhichCPE(cpeList, cpeTerm, idx, listLength, count):
     layout.addWidget(list_widget)
 
     confirm_button = QPushButton("Select")
-    #confirm_button.setStyleSheet("background-color: blue; border-radius: 3px; color: white;")
     layout.addWidget(confirm_button)
 
     def on_confirm():
@@ -99,8 +132,15 @@ def chooseWhichCPE(cpeList, cpeTerm, idx, listLength, count):
     return None
 
 def showNotFoundDevicesPopup(notFoundDevices, refineSearchDevices):
-    app = QApplication.instance() or QApplication([])
-
+    """
+      Displays a popup dialog to inform the user about devices that were not found or need refinement in the search.
+    - Inputs:
+      - notFoundDevices: A list of device names that could not be found in the NVD.
+      - refineSearchDevices: A list of device names that need further refinement to complete the search.
+    - Outputs:
+      - None (Displays a dialog with a list of devices and options to close the dialog).
+     """
+    
     dialog = QDialog()
     dialog.setWindowTitle("Devices Not Found or Need Refinement")
     dialog.setMinimumWidth(1500)  # Make the pop-out window wider
@@ -130,169 +170,57 @@ def showNotFoundDevicesPopup(notFoundDevices, refineSearchDevices):
 
     dialog.exec()
 
-def searchNVDCPE(model):
+def search_nvd_cpe(model):
     print(f"searching {model}")
     try:
         if model.startswith("cpe:"):
             model = model[:-2]
-            cveList = nvdlib.searchCPE(cpeMatchString=model, key= key, delay = delay)
+            cveList = nvdlib.searchCPE(cpeMatchString=model, key=private_key if private_key != "None" else None, delay = delay)
         else:
-            cveList = nvdlib.searchCPE(keywordSearch=model, key= key, delay = delay)
+            cveList = nvdlib.searchCPE(keywordSearch=model, key=private_key if private_key != "None" else None, delay = delay)
     except Exception as e:
         print(f"An error occurred: {e}")
         return None
     return cveList
 
 
-def searchNVD(cpe):
+def search_nvd(cpe):
     print(f'searching cves for {cpe}')
     formatCPE = str(cpe)
     # find a way to securely store the key somewhere
-    cveList = nvdlib.searchCVE(cpeName = formatCPE, key= key, delay = delay)#, keywordExactMatch= True) #added exact match
+    cveList = nvdlib.searchCVE(cpeName = formatCPE, key=private_key if private_key != "None" else None, delay = delay)#, keywordExactMatch= True) #added exact match
     return cveList
 
-def getDescriptionCVE(cveItem):
-    return str(cveItem.descriptions[0].value)
-
-def getCVE(cveItem):
-    return str(cveItem.id)
-
-def getBaseScoreCVE(cveItem):
-    if cveItem.score[1] is not None:
-        return cveItem.score[1]
-    else:
-        return -1
-
-def getAvailabilityImpactCVE(cveItem):
-    try:
-        return cveItem.metrics.cvssMetricV31[0].availabilityImpact
-    except AttributeError:
+def get_confidentiality_impact_cve(cveItem):
+    """
+    Returns the confidentiality impact (None, Low, High) for a CVE item.
+    """
+    for attr in ["cvssMetricV31", "cvssMetricV30", "cvssMetricV2"]:
         try:
-            return cveItem.metrics.cvssMetricV30[0].availabilityImpact
-        except AttributeError:
-            try:
-               return cveItem.metrics.cvssMetricV2[0].availabilityImpact
-            except AttributeError:
-               return 0
-        
-def getConfidentialityImpactCVE(cveItem):
-    try:
-        return cveItem.metrics.cvssMetricV31[0].cvssData.confidentialityImpact
-    except AttributeError:
+            metrics = getattr(cveItem.metrics, attr)[0]
+            return metrics.cvssData.confidentialityImpact if hasattr(metrics, "cvssData") else metrics.confidentialityImpact
+        except (AttributeError, IndexError):
+            continue
+    return 0
+
+def get_exploitability_score_cve(cveItem):
+    """
+    Returns the exploitability score [0, 3.9] for a CVE item.
+    """
+    for attr in ["cvssMetricV31", "cvssMetricV30", "cvssMetricV2"]:
         try:
-            return cveItem.metrics.cvssMetricV30[0].confidentialityImpact
-        except AttributeError:
-            try:
-               return cveItem.metrics.cvssMetricV2[0].confidentialityImpact
-            except AttributeError:
-               return 0
-        
-def getIntegrityImpactCVE(cveItem):
-    try:
-        return cveItem.metrics.cvssMetricV31[0].integrityImpact
-    except AttributeError:
-        try:
-            return cveItem.metrics.cvssMetricV30[0].integrityImpact
-        except AttributeError:
-            try:
-               return cveItem.metrics.cvssMetricV2[0].integrityImpact
-            except AttributeError:
-               return 0
-        
-def getImpactScoreCVE(cveItem):
-    try:
-        return cveItem.metrics.cvssMetricV31[0].impactScore
-    except AttributeError:
-        try:
-            return cveItem.metrics.cvssMetricV30[0].impactScore
-        except AttributeError:
-            try:
-               return cveItem.metrics.cvssMetricV2[0].impactScore
-            except AttributeError:
-               return 0
+            metrics = getattr(cveItem.metrics, attr)[0]
+            return metrics.exploitabilityScore
+        except (AttributeError, IndexError):
+            continue
+    return 0
 
-def getExploitabilityScoreCVE(cveItem):
-    try:
-        return cveItem.metrics.cvssMetricV31[0].exploitabilityScore
-    except AttributeError:
-        try:
-            return cveItem.metrics.cvssMetricV30[0].exploitabilityScore
-        except AttributeError:
-            try:
-               return cveItem.metrics.cvssMetricV2[0].exploitabilityScore
-            except AttributeError:
-               return 0
-            
-def getCVSS(cveItem):
-    try:
-        return cveItem.score, cveItem.v31vector
-    except AttributeError:
-        try:
-            return cveItem.score, cveItem.v30vector 
-        except AttributeError:
-            try:
-               return cveItem.score, cveItem.v2vector  
-            except AttributeError:
-               return 0
-
-def getImpactConversion(cveWord):
-    result = 0
-    if cveWord == 'COMPLETE' or cveWord == 'HIGH':
-        result = 10
-    elif cveWord == 'PARTIAL' or cveWord == 'LOW':
-        result = 6
-    elif cveWord == 'NONE':
-        result = 0
-    return result
-
-def getMultiplierCVE(cveItem):
-    CVEYearString = cveItem.published
-    cveYear = datetime(int(CVEYearString[0:4]), int(CVEYearString[5:7]), int(CVEYearString[8:10]))
-    currentYear = datetime.today()
-    yearDelta = (currentYear - cveYear).days // 365
-
-    if yearDelta <= 0:
-        return 1.0
-    elif yearDelta <= 9:
-        multiplier = 1.0 - (yearDelta * 0.1)
-    else:
-        multiplier = 0.1
-
-    return multiplier
-
-    # multiplier = 1
-    # CVEYearString = cveItem.published
-    # cveYear = datetime (int(CVEYearString[0:4]), int(CVEYearString[5:7]), int(CVEYearString[8:10]))
-    # currentYear = datetime.today()
-    # yearDelta = currentYear - cveYear
-    # if int(yearDelta.days) <= 365:
-    #     multiplier = 1
-    # elif int(yearDelta.days) <= (2 * 365):
-    #     multiplier = 0.9
-    # elif int(yearDelta.days) <= (3 * 365):
-    #     multiplier = 0.8
-    # elif int(yearDelta.days) <= (4 * 365):
-    #     multiplier = 0.7
-    # elif int(yearDelta.days) <= (5 * 365):
-    #     multiplier = 0.6
-    # elif int(yearDelta.days) <= (6 * 365):
-    #     multiplier = 0.5
-    # elif int(yearDelta.days) <= (7 * 365):
-    #     multiplier = 0.4
-    # elif int(yearDelta.days) <= (8 * 365):
-    #     multiplier = 0.3  
-    # elif int(yearDelta.days) <= (9 * 365):
-    #     multiplier = 0.2
-    # else:
-    #     multiplier = 0.1  
-
-    # return multiplier
-
-def getLatestCVEList(cveList):
-    # Define the cutoff date
+def get_latest_cve_list(cveList):
+    """
+    Filter the list to include only CVEs that are not older than the cutoff date.
+    Cutoff date: 10 years from date program is run
+    """
     cutoff_date = datetime.now() - timedelta(days=365 * 10)
-
-    # Filter the list to include only CVEs that are not older than the cutoff date
     refined_cveList = [cve for cve in cveList if datetime.strptime(cve.published, '%Y-%m-%dT%H:%M:%S.%f') > cutoff_date]
 
     return refined_cveList

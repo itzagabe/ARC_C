@@ -1,9 +1,15 @@
-import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QButtonGroup, QToolButton, QFrame
+"""
+Module for defining the generic structure for displaying radio buttons.
+Contains unused subcategory implementation, however, it has not been fully tested and may cause issues.
+"""
+from PySide6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QHBoxLayout, QWidget, QButtonGroup, QToolButton, QFrame
 from PySide6.QtCore import Qt
-from shared_functions import InterpolateColour
 
-def ButtonGroup(severityList):
+def button_group(severityList):
+    """
+    Creates a button group for selecting severity levels from a provided list.
+    Each button is styled based on its severity and grouped horizontally.
+    """
     buttonGroup = QButtonGroup()
     buttonLayout = QHBoxLayout()
     buttonLayout.setSpacing(0)
@@ -25,7 +31,13 @@ def ButtonGroup(severityList):
            
     return buttonGroup, buttonLayout
 
-def CatLayout(mainLayout, buttonGroupsList, categoryList, severityList):
+def cat_layout(mainLayout, buttonGroupsList, categoryList, severityList):
+    """
+    Lays out the entire category hierarchy with severity button groups.
+    Handles both categories and subcategories, adds toggle buttons for expanding/collapsing.
+    NOTE: Subcategories are not used in our implementation of ARC-C. As such, the implementation
+      of subcategories is not fully tested and may contain issues. 
+    """
     if isinstance(categoryList, str):
         categoryList = [(categoryList, [])]
     elif isinstance(categoryList, list):
@@ -65,7 +77,7 @@ def CatLayout(mainLayout, buttonGroupsList, categoryList, severityList):
             toggleButton.setChecked(False)
             toggleButton.setToolButtonStyle(Qt.ToolButtonIconOnly)
             toggleButton.setArrowType(Qt.RightArrow)
-            toggleButton.toggled.connect(lambda checked, btn=toggleButton, cat=categoryName, subs=subcategories, label=frameLabels: ToggleSubcat(checked, btn, cat, subs, activeItems, categoryList, buttonGroupsList, label))
+            toggleButton.toggled.connect(lambda checked, btn=toggleButton, cat=categoryName, subs=subcategories, label=frameLabels: toggle_subcat(checked, btn, cat, subs, activeItems, categoryList, buttonGroupsList, label))
             categoryLayout.addWidget(toggleButton)
         else:
             dropdownSpacer = QWidget()
@@ -79,7 +91,7 @@ def CatLayout(mainLayout, buttonGroupsList, categoryList, severityList):
         layoutLabels.addWidget(categoryLabel)  # Line determining location of the label
 
         for layout, buttonGroups in zip(layouts, buttonGroupsList):
-            buttonGroup, buttonLayout = ButtonGroup(severityList)
+            buttonGroup, buttonLayout = button_group(severityList)
             layout.addLayout(buttonLayout)
             buttonGroups[categoryName.strip()] = buttonGroup
 
@@ -97,7 +109,7 @@ def CatLayout(mainLayout, buttonGroupsList, categoryList, severityList):
             subcategoryLayout.setContentsMargins(20, 0, 0, 0)
 
             for subcategory in subcategories:
-                subcategoryLayout.addLayout(SubcatLayout(subcategory, severityList, buttonGroupsList, categoryName.strip()))
+                subcategoryLayout.addLayout(subcat_layout(subcategory, severityList, buttonGroupsList, categoryName.strip()))
 
             subcategoryFrame.setLayout(subcategoryLayout)
             subcategoryFrame.setVisible(False)
@@ -106,7 +118,12 @@ def CatLayout(mainLayout, buttonGroupsList, categoryList, severityList):
 
     return activeItems
 
-def ToggleSubcat(checked, button, categoryName, subcategories, activeItems, categoryList, buttonGroupsList, label):
+def toggle_subcat(checked, button, categoryName, subcategories, activeItems, categoryList, buttonGroupsList, label):
+    """
+    Toggles visibility and interaction of subcategories under a category.
+    Disables the main category buttons and updates the activeItems list.
+    NOTE: As mentioned previously, this has not been rigorously tested and may cause issues.
+    """
     if checked:
         if categoryName in activeItems:
             activeItems.remove(categoryName)
@@ -127,9 +144,12 @@ def ToggleSubcat(checked, button, categoryName, subcategories, activeItems, cate
             for button in buttonGroups[categoryName.strip()].buttons():
                 button.setDisabled(False)
         label.setStyleSheet("QLabel { color: black; }")  # Reset the label text color
-    ReorderActiveItems(activeItems, categoryList)
+    reorder_active_items(activeItems, categoryList)
 
-def SubcatLayout(subcategory, severityList, buttonGroupsList, parentCategory):
+def subcat_layout(subcategory, severityList, buttonGroupsList, parentCategory):
+    """
+    Creates and returns the layout for a subcategory, including label and severity buttons.
+    """
     subcategoryLayout = QHBoxLayout()
 
     # Frame for dropdown button and subcategory labels
@@ -156,7 +176,7 @@ def SubcatLayout(subcategory, severityList, buttonGroupsList, parentCategory):
     layoutLabels.addWidget(subcategoryLabel)
 
     for layout, buttonGroups in zip(layouts, buttonGroupsList):
-        buttonGroup, subcategoryButtonLayout = ButtonGroup(severityList)
+        buttonGroup, subcategoryButtonLayout = button_group(severityList)
         layout.addLayout(subcategoryButtonLayout)
         buttonGroups[f"{parentCategory} - {subcategory}"] = buttonGroup
 
@@ -166,7 +186,10 @@ def SubcatLayout(subcategory, severityList, buttonGroupsList, parentCategory):
 
     return subcategoryLayout
 
-def ReorderActiveItems(activeItems, categoryList):
+def reorder_active_items(activeItems, categoryList):
+    """
+    Sorts the activeItems list to preserve the original category/subcategory ordering.
+    """
     orderedActiveItems = []
     for categoryName, subcategories in categoryList:
         if categoryName in activeItems:
@@ -177,7 +200,10 @@ def ReorderActiveItems(activeItems, categoryList):
                 orderedActiveItems.append(subItem)
     activeItems[:] = orderedActiveItems
 
-def DisplayResults(buttonGroupsList, activeItems):
+def display_results(buttonGroupsList, activeItems):
+    """
+    Collects and returns all selected severity values for the current button groups.
+    """
     returnValue = []
     totalSeverityValue = 0
     numCategories = 0
@@ -196,34 +222,12 @@ def DisplayResults(buttonGroupsList, activeItems):
     
     return returnValue
 
-def CreateLayout(mainLayout, severityList, categoryList, numButtonGroups):
+def create_layout(mainLayout, severityList, categoryList, numButtonGroups):
+    """
+    Initializes the layout by creating button groups and processing categories.
+    Used for create_general_layout in parameters_ui.py.
+    """
     buttonGroupsList = [{} for _ in range(numButtonGroups)]  # Create a list of empty dictionaries for button groups
-    activeItems = CatLayout(mainLayout, buttonGroupsList, categoryList, severityList)
+    activeItems = cat_layout(mainLayout, buttonGroupsList, categoryList, severityList)
     return buttonGroupsList, activeItems
-
-def MapDataCategories(returnValue):
-    severityMap = {"Low": 0, "Medium": 1, "High": 2}
-
-    if len(returnValue) < 2:
-        return "Incomplete data"
-
-    # Automatically assign the first and second categories
-    dataRateLevel = returnValue[0][2]
-    publishersLevel = returnValue[1][2]
-
-    dataRateIndex = severityMap.get(dataRateLevel)
-    publishersIndex = severityMap.get(publishersLevel)
-
-    if dataRateIndex is None or publishersIndex is None:
-        return "Invalid severity level"
-
-    chart = [
-        [["Very Low", 0.1], ["Low", 0.3], ["Moderate", 0.75]],
-        [["Low", 0.3], ["Moderate", 0.75], ["High", 0.9]],
-        [["Moderate", 0.75], ["High", 0.9], ["Very High", 1.0]]
-    ]
-
-    result = chart[publishersIndex][dataRateIndex]
-
-    return result
 

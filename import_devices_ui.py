@@ -1,21 +1,22 @@
+"""
+Module for managing the device import UI panel in the application.
+Provides functionality for importing devices individually, in groups, or manually, and for displaying vulnerability results. 
+Handles calculation and display of the probability of software compromise based on active device CVEs.
+"""
 from PySide6.QtWidgets import (
-    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLineEdit, QPushButton, QDoubleSpinBox,
+    QWidget, QVBoxLayout, QHBoxLayout, QComboBox, QLineEdit, QPushButton, QDoubleSpinBox,
     QLabel, QCheckBox, QListWidget, QFileDialog, QStyle, QStackedLayout, QMessageBox, QDialog, QFrame, QListWidgetItem, QScrollArea
 )
 from PySide6.QtCore import Qt
-from nvd import searchPLCInfoNVD
-from nvd import getExploitabilityScoreCVE, getConfidentialityImpactCVE
-from shared_functions import CreateResultButtonWidget, UpdateResultButton
+from nvd import search_plc_info_nvd
+from nvd import get_exploitability_score_cve, get_confidentiality_impact_cve
+from shared_functions import create_result_button, update_result_button
 
+# === Global Config / State ===
 search_terms = []
 detailed_search = False
 deviceInfoList = []  # format [(cpe name, [(cve, status), (cve, status), etc]), (cpe name, [(cve, status), (cve, status), etc])]
 results_to_device_map = {}
-
-def toggle_detailed_search(state):
-    global detailed_search
-    detailed_search = bool(state)
-    print(state)
 
 def show_error_popup(message):
     msg_box = QMessageBox()
@@ -25,6 +26,13 @@ def show_error_popup(message):
     msg_box.exec()
 
 def handle_search(source, results_list, device_name_edit=None):
+    """ 
+    Performs a search based on the specified search term and updates the list of devices and CVEs.
+    - Inputs:
+      - source: Indicates if the search is individual or group-based.
+      - device_name_edit: The input field for device name (only used for individual search).
+    Updates the device list and populates the `deviceInfoList` and `results_to_device_map` globals for individual and group importing.
+    """
     global search_terms, deviceInfoList, results_to_device_map
 
     if source == "Individual":
@@ -37,18 +45,18 @@ def handle_search(source, results_list, device_name_edit=None):
 
     try:
         # Perform search with the current search terms
-        new_device_info_list = searchPLCInfoNVD(search_terms, detailed_search)
+        new_device_info_list = search_plc_info_nvd(search_terms, detailed_search)
 
         # Modify the structure to store CVE information with status
         updated_device_info_list = []
         for cpe, cves in new_device_info_list:
             updated_cves = []
             for cve, status in cves:
-                confidentiality_impact = getConfidentialityImpactCVE(cve)
+                confidentiality_impact = get_confidentiality_impact_cve(cve)
                 if confidentiality_impact not in ['NONE', 'LOW', 'HIGH']:
-                    confidentiality_impact = 'NONE'  # Default to NONE if the value is not valid
+                    confidentiality_impact = 'NONE'  # Default to NONE if the value is for some reason not valid
 
-                cve_info = [cve.id, getExploitabilityScoreCVE(cve), confidentiality_impact]
+                cve_info = [cve.id, get_exploitability_score_cve(cve), confidentiality_impact]
                 updated_cves.append((cve_info, status))
             updated_device_info_list.append((cpe, updated_cves))
 
@@ -64,7 +72,7 @@ def handle_search(source, results_list, device_name_edit=None):
             results_to_device_map[idx] = item
 
         # Automatically calculate values after search
-        GetImportValues()
+        get_import_values()
 
     except Exception as e:
         show_error_popup(f"An error occurred during search: {e}")
@@ -72,6 +80,10 @@ def handle_search(source, results_list, device_name_edit=None):
 
 
 def handle_group_file_load(path_box):
+    """ 
+    Loads search terms from a file and updates the search term list (for group imports).
+    Updates the global search_terms list with the contents of the loaded file.
+    """
     file_dialog = QFileDialog()
     file_path, _ = file_dialog.getOpenFileName(None, "Open File", "", "All Files (*)")
 
@@ -96,7 +108,16 @@ def handle_group_file_load(path_box):
         path_box.setPlaceholderText("File path will be displayed here")
         path_box.setStyleSheet("font-style: italic;")
 
-def calculateResilience(cves, b_d=0.03, c_w=2):
+def calculate_resilience(cves, b_d=0.03, c_w=2):
+    """ 
+    Calculates the "resilience" of a device based on its CVE exploitability and impact.
+    - Inputs:
+      - cves: List of CVE entries where each entry contains exploitability and impact details.
+      - b_d: Base resilience value (default 0.03).
+      - c_w: Weighting factor for exploitability (default 2).
+    Returns the calculated resilience score of the device.
+    """
+
     deviceResilience = 1
     for (cve_info, status) in cves:
         if status:  # Only consider active CVEs
@@ -115,7 +136,11 @@ def calculateResilience(cves, b_d=0.03, c_w=2):
     return b_d + (1 - b_d) * (1 - deviceResilience)
 
 
-def showCVEPopup(item, results_list):
+def show_cve_popup(item, results_list):
+    """
+    Displays a popup with the CVE details for a selected device.
+    Used when double-clicking on a device in the imported devices list. 
+    """
     global deviceInfoList, results_to_device_map
     idx = results_list.row(item)
     cpe, cves = deviceInfoList[idx]
@@ -126,14 +151,12 @@ def showCVEPopup(item, results_list):
                 deviceInfoList[idx][1][i] = (deviceInfoList[idx][1][i][0], checked)
                 break
         # Recalculate immediately after toggling CVE status
-        GetImportValues()
+        get_import_values()
         update_device_compromise_button()
 
     def update_device_compromise_button():
-        device_compromise = calculateResilience(cves)
-        UpdateResultButton(device_compromise_button, device_compromise, "Probability of Compromise")
-
-    app = QApplication.instance() or QApplication([])
+        device_compromise = calculate_resilience(cves)
+        update_result_button(device_compromise_button, device_compromise, "Probability of Compromise")
 
     def remove_device():
         reply = QMessageBox.question(
@@ -151,7 +174,7 @@ def showCVEPopup(item, results_list):
                 results_to_device_map[i] = results_list.item(i)
             dialog.accept()
             # Recalculate after device removal
-            GetImportValues()
+            get_import_values()
 
     dialog = QDialog()
     dialog.setWindowTitle(f"CVEs for {cpe}")
@@ -169,7 +192,7 @@ def showCVEPopup(item, results_list):
     scroll_area.setWidget(scroll_content)
     main_layout.addWidget(scroll_area)
 
-    device_compromise_button = CreateResultButtonWidget("#bababa")  # Initial color
+    device_compromise_button = create_result_button("#bababa")  # Initial color
     scroll_layout.addWidget(device_compromise_button, alignment=Qt.AlignCenter)
     update_device_compromise_button()
 
@@ -183,7 +206,7 @@ def showCVEPopup(item, results_list):
     button_layout = QHBoxLayout()
     
     remove_button = QPushButton("Remove")
-    remove_button.clicked.connect(lambda: [remove_device(), GetImportValues()])
+    remove_button.clicked.connect(lambda: [remove_device(), get_import_values()])
     button_layout.addWidget(remove_button)
     
     close_button = QPushButton("Close")
@@ -195,8 +218,9 @@ def showCVEPopup(item, results_list):
 
     dialog.exec()
 
-
+# === Logic for the bottom half of the import device panel ===
 def create_bottom_layout():
+
     bottom_layout = QHBoxLayout()
     imported_devices_label = QLabel("Imported Devices")
     imported_devices_label.setToolTip("This is the list of imported devices.")
@@ -207,6 +231,12 @@ def create_bottom_layout():
     detailed_search_label.setToolTip("Enable this for a more refined search.")
     detailed_search_checkbox = QCheckBox()
     detailed_search_checkbox.setToolTip("Enable this for a more refined search.")
+
+    def toggle_detailed_search(state):
+      global detailed_search
+      detailed_search = bool(state)
+      print(state)
+
     detailed_search_checkbox.stateChanged.connect(toggle_detailed_search)
     detailed_search_layout.addWidget(detailed_search_label)
     detailed_search_layout.addWidget(detailed_search_checkbox)
@@ -220,10 +250,15 @@ def create_results_list():
     results_list = QListWidget()
     results_list.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOn)
     results_list.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-    results_list.itemDoubleClicked.connect(lambda item: showCVEPopup(item, results_list))
+    results_list.itemDoubleClicked.connect(lambda item: show_cve_popup(item, results_list))
     return results_list
+# =========================================================
 
+# === Logic for the top half of the import device panel ===
 def create_individual_layout(results_list):
+    """
+    Logic for the individual device dropdown.
+    """
     individual_layout = QVBoxLayout()
     device_name_edit = QLineEdit()
     device_name_edit.setPlaceholderText("Enter Device Name")
@@ -237,6 +272,9 @@ def create_individual_layout(results_list):
     return individual_layout
 
 def create_group_layout(container, results_list):
+    """
+    Logic for the group device dropdown.
+    """
     group_layout = QVBoxLayout()
 
     group_file_layout = QHBoxLayout()
@@ -260,6 +298,9 @@ def create_group_layout(container, results_list):
     return group_layout
 
 def create_manual_layout():
+    """
+    Logic for the manual device dropdown.
+    """
     manual_layout = QVBoxLayout()
 
     add_device_button = QPushButton("Add Device")
@@ -273,7 +314,10 @@ def create_manual_layout():
     return manual_layout
 
 def handle_add_device(results_list):
-    app = QApplication.instance() or QApplication([])
+    """ 
+    Handles the addition of a new device using the manual import method, prompting the user for device and CVE details.
+    Adds new devices and CVEs to `deviceInfoList` and updates the UI.
+    """
 
     dialog = QDialog()
     dialog.setWindowTitle("Add Device")
@@ -367,13 +411,12 @@ def handle_add_device(results_list):
         dialog.accept()
 
         # Recalculate after adding a new device
-        GetImportValues()
+        get_import_values()
 
     save_button.clicked.connect(save_device)
     cancel_button.clicked.connect(dialog.reject)
 
     dialog.exec()
-
 
 
 def create_manual_layout(results_list):
@@ -388,8 +431,12 @@ def create_manual_layout(results_list):
     manual_layout.addWidget(search_button)
 
     return manual_layout
+# =========================================================
 
 def clear_devices(results_list):
+    """
+    Clears all devices from the list.
+    """
     reply = QMessageBox.question(
         None, 'Clear All Devices',
         "Are you sure you want to clear all devices?",
@@ -403,7 +450,10 @@ def clear_devices(results_list):
         results_list.clear()
         update_pve_alt_button(0.00)
 
-def setupImportDevices(container):
+def setup_import_devices(container):
+    """ 
+    Configures the overall panel design and layout.
+    """
     frame = QFrame(container)
     frame.setFrameShape(QFrame.Box)
     frame.setLineWidth(1)
@@ -470,6 +520,9 @@ def setupImportDevices(container):
 
 
 def show_help_window(selection):
+    """
+    Creates the "Help Window" and subsequent text pertaining to each step.
+    """
     help_text = {
         "Individual": """
 1. Enter the name of the device in the entry field provided. For more accurate results, you can use the <a href='https://nvd.nist.gov/products/cpe/search'>NVD CPE database</a> to find the exact model name.<br><br>
@@ -503,8 +556,6 @@ Use this if you want to manually create devices and CVEs. This section is mainly
 &nbsp;&nbsp;&nbsp;&nbsp;b. Exploitability score and Impact directly affect the final cryptoperiod calculation. Exploitability must be between the bounds [0, 3.9].
         """
     }
-
-    app = QApplication.instance() or QApplication([])
 
     dialog = QDialog()
     dialog.setWindowTitle("Help")
@@ -545,7 +596,13 @@ Use this if you want to manually create devices and CVEs. This section is mainly
 
     dialog.exec()
 
-def GetImportValues():
+def get_import_values():
+    """
+    Calculates and returns the overall probability of software compromise.
+    Updates the global display with the calculated compromise value
+    Returns a tuple: (totalCompromise, True) if devices exist, otherwise (0, False)
+    Used by show_results() in main.py.
+    """
     if not deviceInfoList:
         print('No devices found')
         return 0, False
@@ -557,7 +614,7 @@ def GetImportValues():
 
     overallResilience = 1
     for cpe, cves in activeDeviceInfoList:
-        deviceCompromise = calculateResilience(cves)
+        deviceCompromise = calculate_resilience(cves)
         overallResilience *= 1 - deviceCompromise
 
     totalCompromise = 1 - overallResilience
@@ -567,10 +624,20 @@ def GetImportValues():
 
 
 def update_pve_alt_button(pVe_alt):
+    """
+    Updates the text for the probability of software compromise.
+    Called whenever the probability of software compromised is changed.
+    Original update_result_button() is defined in shared_functions.py.
+    """
     global totalCompromiseDisplay
-    UpdateResultButton(totalCompromiseDisplay, pVe_alt, "Probability of Software Compromise")
+    update_result_button(totalCompromiseDisplay, pVe_alt, "Probability of Software Compromise")
 
-def setupImportDevices(container):
+def setup_import_devices(container):
+    """
+    Sets up the full device import UI section, including dropdown views and result display.
+    Attaches a stacked layout to the container with individual, group, and manual device import modes.
+    Adds functionality for clearing devices and displaying software compromise probability.
+    """
     frame = QFrame(container)
     frame.setFrameShape(QFrame.Box)
     frame.setLineWidth(1)
@@ -624,18 +691,13 @@ def setupImportDevices(container):
     main_layout.addWidget(results_list)
 
     clear_devices_button = QPushButton("Clear Devices")
-    clear_devices_button.clicked.connect(lambda: [clear_devices(results_list), GetImportValues()])
+    clear_devices_button.clicked.connect(lambda: [clear_devices(results_list), get_import_values()])
     main_layout.addWidget(clear_devices_button)
 
     global totalCompromiseDisplay
-    totalCompromiseDisplay = CreateResultButtonWidget("#bababa")
+    totalCompromiseDisplay = create_result_button("#bababa")
     update_pve_alt_button(0.00) #set initial display
     main_layout.addWidget(totalCompromiseDisplay, alignment=Qt.AlignCenter)  # Add pVe_alt button below the Clear Devices button
 
     container.setLayout(QVBoxLayout())
     container.layout().addWidget(frame)
-
-
-def update_pve_alt_label(pVe_alt):
-    global pve_alt_label
-    pve_alt_label.setText(f"pVe_alt: {pVe_alt:.4f}")

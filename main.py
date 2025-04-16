@@ -1,15 +1,27 @@
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QPushButton, QLabel, QSizePolicy, QSlider, QLineEdit, QMessageBox, QCheckBox, QMenuBar, QMenu
+"""
+Main Module.
+Defines the location of each subset of UI elements (parameters_ui.py and import_devices_ui.py).
+Performs the final cryptoperiod calculation based on values provided by:
+- get_import_values (probability of software compromise)
+- values
+  - [0]: functional importance
+  - [1]: information rate
+  - [2]: policy strength
+"""
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QWidget, QFrame, QPushButton, QSizePolicy, QLineEdit, QMessageBox, QCheckBox, QMenuBar, QMenu
 from PySide6.QtGui import QAction
 from PySide6.QtCore import Qt
 import sys
-from parameters_ui import setupTopRight, setupImpact, updateTimeDifference, values
-from import_devices_ui import setupImportDevices, GetImportValues
+from parameters_ui import setup_top_right, setup_impact, update_time_difference, values
+from import_devices_ui import setup_import_devices, get_import_values
 
-#results_window = None
 results_text_box = None
 show_message_box = True  # do not show again
 
-def EmptyImport(variable):
+def empty_import(variable):
+    """
+    Detects if no devices are imported. If so, provide a warning.
+    """
     global show_message_box
 
     if not variable and show_message_box:
@@ -36,7 +48,11 @@ def EmptyImport(variable):
         return reply == QMessageBox.Yes
     return True
 
-def showCryptoperiodWarning():
+def show_cryptoperiod_warning():
+    """
+    Defines warning if there is an error regarding the minimum or maximum cryptoperiod values.
+    Used in show_results().
+    """
     # Create a message box
     msg_box = QMessageBox()
     
@@ -51,7 +67,11 @@ def showCryptoperiodWarning():
     # Execute the message box and wait for user response
     msg_box.exec()
 
-def displayTimeDifference(hours):
+def display_time_difference(hours):
+    """
+    Formats the time for the final cryptoperiod calculation display.
+    """
+
     months = hours // (30 * 24)
     hours %= (30 * 24)
     days = hours // 24
@@ -76,16 +96,20 @@ def displayTimeDifference(hours):
 
     return ", ".join(result)
 
-def ShowResults():
+def show_results():
+    """
+    Actual calculation for the overal cryptoperiod.
+    Also displays cryptoperiod and individual variable calculations in console.
+    """
 
-    deviceProbability, isNotEmpty = GetImportValues()
-    timeRange1, timeRange2 = updateTimeDifference()
+    deviceProbability, isNotEmpty = get_import_values()
+    timeRange1, timeRange2 = update_time_difference()
 
     if timeRange1 > timeRange2:
-        showCryptoperiodWarning()
+        show_cryptoperiod_warning()
         return
     
-    if not EmptyImport(isNotEmpty): # Create warning pop-up if no devices are present
+    if not empty_import(isNotEmpty): # Create warning pop-up if no devices are present
         return
             
     if deviceProbability == 0: #if no devices, assume worst case scenario
@@ -95,8 +119,8 @@ def ShowResults():
     print(f'Software Probability: {deviceProbability}   Procedure Probability: {values.policy}\nTOTAL PROBABILITY: {probability}') 
 
     weight = 1 - (values.impact ** (1/3))
-    impact = values.impact * values.data**weight
-    print(f'Information Rate: {values.data}   Functional Importance: {values.impact}\nTOTAL IMPACT: {impact}')
+    impact = values.impact * values.information**weight
+    print(f'Information Rate: {values.information}   Functional Importance: {values.impact}\nTOTAL IMPACT: {impact}')
 
     
     finalRisk = (probability * impact)
@@ -104,54 +128,18 @@ def ShowResults():
     print(f"Final Risk: {finalRisk}\n")
     
     cryptoperiod = timeRange1 * (timeRange2 / timeRange1)**(1-finalRisk)
-    cryptoperiod_display = "Old: " + displayTimeDifference(cryptoperiod)
+    cryptoperiod_display = "Old: " + display_time_difference(cryptoperiod)
 
     if results_text_box:
         results_text_box.setText(f" {cryptoperiod_display}")
         print(f"Recommended cryptoperiod: {cryptoperiod_display}\n")
 
 def create_main_window():
-    def set_dark_mode():
-        app.setStyleSheet("""
-            QMainWindow { background-color: #2E2E2E; color: white; }
-            QWidget { background-color: #2E2E2E; color: white; }
-            QPushButton { background-color: #1E90FF; color: white; border-radius: 3px; }
-            QLineEdit { background-color: #3E3E3E; color: white; }
-            QCheckBox { background-color: #2E2E2E; color: white; }
-        """)
-
-    def set_light_mode():
-        app.setStyleSheet("""
-            QMainWindow { background-color: white; color: black; }
-            QWidget { background-color: white; color: black; }
-            QPushButton { background-color: #1E90FF; color: white; border-radius: 3px; }
-            QLineEdit { background-color: #F0F0F0; color: black; }
-            QCheckBox { background-color: white; color: black; }
-        """)
-
-    def set_normal_mode():
-        app.setStyleSheet("")
-
+    """
+    Creates the main window using defined objects from parameters_ui.py and import_devices_ui.py.
+    """
     window = QMainWindow()
     window.setWindowTitle("ARC-C Cryptoperiod Calculator")
-
-    menu_bar = QMenuBar()
-    #window.setMenuBar(menu_bar)
-
-    appearance_menu = QMenu("Appearance", window)
-    #menu_bar.addMenu(appearance_menu)
-
-    dark_mode_action = QAction("Dark Mode", window)
-    dark_mode_action.triggered.connect(set_dark_mode)
-    appearance_menu.addAction(dark_mode_action)
-
-    light_mode_action = QAction("Light Mode", window)
-    light_mode_action.triggered.connect(set_light_mode)
-    appearance_menu.addAction(light_mode_action)
-
-    normal_mode_action = QAction("Normal Mode", window)
-    normal_mode_action.triggered.connect(set_normal_mode)
-    appearance_menu.addAction(normal_mode_action)
 
     container = QWidget()
     main_layout = QVBoxLayout(container)
@@ -162,11 +150,11 @@ def create_main_window():
     top_layout = QHBoxLayout(top_frame)
 
     left_container = QFrame()
-    setupImportDevices(left_container)
+    setup_import_devices(left_container)
     top_layout.addWidget(left_container)
 
     right_container = QFrame()
-    setupTopRight(right_container)
+    setup_top_right(right_container)
     top_layout.addWidget(right_container)
 
     top_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
@@ -174,7 +162,7 @@ def create_main_window():
 
     # Create a bottom frame and set up the right UI in it
     bottom_frame = QFrame()
-    setupImpact(bottom_frame)
+    setup_impact(bottom_frame)
     bottom_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
     main_layout.addWidget(bottom_frame, alignment=Qt.AlignTop)
 
@@ -186,7 +174,7 @@ def create_main_window():
     print_button.setFixedHeight(30)
     print_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
     print_button.setToolTip("This button prints the results.")
-    print_button.clicked.connect(ShowResults)
+    print_button.clicked.connect(show_results)
     print_button.setStyleSheet("background-color: #1E90FF; color: white; border-radius: 3px;")
     button_text_layout.addWidget(print_button, 1)
 
@@ -203,7 +191,6 @@ def create_main_window():
 
     container.setLayout(main_layout)
     window.setCentralWidget(container)
-    #window.setGeometry(100, 50, 800, 600)  # Set the window position higher
     return window
 
 def main():
