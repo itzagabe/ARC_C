@@ -88,4 +88,4 @@ _Note: that since policy strength does not require any extra calculations after 
 
 ## Acknowledgements
 
-Natalija Vlajic, Thomas Nehring, Robert Noce, and Edgar Wolf, Marin Litoiu, Usman T Khan
+Natalija Vlajic, Stefan Petrović, Thomas Nehring, Robert Noce, and Edgar Wolf, Marin Litoiu, Usman T Khan
