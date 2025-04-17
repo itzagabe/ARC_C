@@ -171,7 +171,7 @@ def showNotFoundDevicesPopup(notFoundDevices, refineSearchDevices):
     dialog.exec()
 
 def search_nvd_cpe(model):
-    print(f"searching {model}")
+    print(f"Searching CPE: {model}")
     try:
         if model.startswith("cpe:"):
             model = model[:-2]
@@ -185,7 +185,7 @@ def search_nvd_cpe(model):
 
 
 def search_nvd(cpe):
-    print(f'searching cves for {cpe}')
+    print(f'Searching cves for: {cpe}')
     formatCPE = str(cpe)
     # find a way to securely store the key somewhere
     cveList = nvdlib.searchCVE(cpeName = formatCPE, key=private_key if private_key != "None" else None, delay = delay)#, keywordExactMatch= True) #added exact match

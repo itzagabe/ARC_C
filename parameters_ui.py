@@ -391,18 +391,15 @@ def update_time_range_1(value, unit):
     global timeRange1
     timeRange1 = convert_to_hours(value, unit)
     update_time_difference()
-    #print(f"Time Range 1: {time_range1_hours} hours")
 
 def update_time_range_2(value, unit):
     global timeRange2
     timeRange2 = convert_to_hours(value, unit)
     update_time_difference()
-    #print(f"Time Range 2: {time_range2_hours} hours")
 
 def update_time_difference():
     global timeDifference
     timeDifference = abs(timeRange2 - timeRange1)
-    #print(f"Time Difference: {timeDifference} hours")
     return timeRange1, timeRange2
 
 def convert_to_hours(value, unit):

@@ -235,7 +235,6 @@ def create_bottom_layout():
     def toggle_detailed_search(state):
       global detailed_search
       detailed_search = bool(state)
-      print(state)
 
     detailed_search_checkbox.stateChanged.connect(toggle_detailed_search)
     detailed_search_layout.addWidget(detailed_search_label)
