@@ -114,7 +114,8 @@ def show_results():
             
     if deviceProbability == 0: #if no devices, assume worst case scenario
       deviceProbability = 1
-
+      
+    # === FINAL FORMULA ===
     probability = 1 - ((1 - deviceProbability)*(1 - values.policy))
     print(f'Software Probability: {deviceProbability}   Procedure Probability: {values.policy}\nTOTAL PROBABILITY: {probability}') 
 
@@ -133,7 +134,8 @@ def show_results():
     if results_text_box:
         results_text_box.setText(f" {cryptoperiod_display}")
         print(f"Recommended cryptoperiod: {cryptoperiod_display}\n")
-
+    # =====================
+    
 def create_main_window():
     """
     Creates the main window using defined objects from parameters_ui.py and import_devices_ui.py.
